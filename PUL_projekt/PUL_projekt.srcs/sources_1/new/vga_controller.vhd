@@ -2,26 +2,22 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
 
-entity vga_bar is
+entity vga_controller is
     Port(
         Clock100MHz : in  STD_LOGIC;
         reset       : in  STD_LOGIC;
         enable      : in  STD_LOGIC;
-        adc_data    : in  STD_LOGIC_VECTOR(11 downto 0);
         VGA_R       : out STD_LOGIC;
         VGA_G       : out STD_LOGIC;
         VGA_B       : out STD_LOGIC;
         VGA_HS      : out STD_LOGIC;
         VGA_VS      : out STD_LOGIC
     );
-end vga_bar;
+end vga_controller;
 
-architecture Behavioral of vga_bar is
+architecture Behavioral of vga_controller is
 
-    signal clk25  : STD_LOGIC := '0';
-    signal h_cnt  : integer range 0 to 799 := 0;
-    signal v_cnt  : integer range 0 to 524 := 0;
-    signal active : STD_LOGIC := '0';
+    signal clk25    : STD_LOGIC := '0';
 
     constant H_VISIBLE : integer := 640;
     constant H_FRONT   : integer := 16;
@@ -35,16 +31,14 @@ architecture Behavioral of vga_bar is
     constant V_BACK    : integer := 33;
     constant V_TOTAL   : integer := 525;
 
-    -- Grubość paska w pikselach
-    constant BAR_HEIGHT : integer := 460;
-
-    -- Szerokość paska obliczona z ADC: (adc_data * 640) / 4096
-    signal bar_width : integer range 0 to 640 := 0;
+    signal h_cnt    : integer range 0 to H_TOTAL - 1 := 0;
+    signal v_cnt    : integer range 0 to V_TOTAL - 1 := 0;
+    signal active   : STD_LOGIC := '0';
+    signal stripe   : STD_LOGIC_VECTOR(2 downto 0) := (others => '0');
 
 begin
 
-    -- Dzielnik 100MHz -> 25MHz
-    CLK_DIVIDER : process(Clock100MHz)
+    process(Clock100MHz)
         variable cnt : integer range 0 to 1 := 0;
     begin
         if rising_edge(Clock100MHz) then
@@ -62,20 +56,8 @@ begin
         end if;
     end process;
 
-    -- Przelicz szerokość paska z ADC
-    BAR_WIDTH_SCALLING : process(Clock100MHz)
-    begin
-        if rising_edge(Clock100MHz) then
-            if reset = '1' then
-                bar_width <= 0;
-            else
-                bar_width <= to_integer(unsigned(adc_data)) * 5 / 32;
-            end if;
-        end if;
-    end process;
-
     -- Liczniki H i V
-    HV_CONTER : process(clk25)
+    process(clk25)
     begin
         if rising_edge(clk25) then
             if reset = '1' then
@@ -96,7 +78,6 @@ begin
         end if;
     end process;
 
-    -- Sync
     VGA_HS <= '0' when (reset = '0' and enable = '1') and
                        (h_cnt >= H_VISIBLE + H_FRONT) and
                        (h_cnt <  H_VISIBLE + H_FRONT + H_SYNC)
@@ -112,31 +93,22 @@ begin
                        (v_cnt < V_VISIBLE)
               else '0';
 
-    -- Rysowanie paska
-    DRAW_BAR : process(clk25)
+    -- Numer paska
+    process(h_cnt)
     begin
-        if rising_edge(clk25) then
-            if active = '1' and v_cnt < BAR_HEIGHT then
-                -- Białe linie co 0.5V
-                if (h_cnt mod 78) < 2 then
-                    VGA_R <= '1';
-                    VGA_G <= '1';
-                    VGA_B <= '1';
-                -- Zielony pasek ADC
-                elsif h_cnt < bar_width then
-                    VGA_R <= '0';
-                    VGA_G <= '1';
-                    VGA_B <= '0';
-                else
-                    VGA_R <= '0';
-                    VGA_G <= '0';
-                    VGA_B <= '0';
-                end if;
-            else
-                VGA_R <= '0';
-                VGA_G <= '0';
-                VGA_B <= '0';
-            end if;
+        if    h_cnt < 80  then stripe <= "000";
+        elsif h_cnt < 160 then stripe <= "001";
+        elsif h_cnt < 240 then stripe <= "010";
+        elsif h_cnt < 320 then stripe <= "011";
+        elsif h_cnt < 400 then stripe <= "100";
+        elsif h_cnt < 480 then stripe <= "101";
+        elsif h_cnt < 560 then stripe <= "110";
+        else                   stripe <= "111";
         end if;
     end process;
+
+    VGA_R <= stripe(2) and active;
+    VGA_G <= stripe(1) and active;
+    VGA_B <= stripe(0) and active;
+
 end Behavioral;

@@ -17,6 +17,11 @@ set_property -dict { PACKAGE_PIN C11   IOSTANDARD LVCMOS33 } [get_ports { SW[1] 
 set_property -dict { PACKAGE_PIN C10   IOSTANDARD LVCMOS33 } [get_ports { SW[2] }]; #IO_L13N_T2_MRCC_16 Sch=sw[2]
 set_property -dict { PACKAGE_PIN A10   IOSTANDARD LVCMOS33 } [get_ports { SW[3] }]; #IO_L14P_T2_SRCC_16 Sch=sw[3]
 
+## Buttons
+set_property -dict { PACKAGE_PIN D9    IOSTANDARD LVCMOS33 } [get_ports { Button[0] }]; #IO_L6N_T0_VREF_16 Sch=btn[0]
+set_property -dict { PACKAGE_PIN C9    IOSTANDARD LVCMOS33 } [get_ports { Button[1] }]; #IO_L11P_T1_SRCC_16 Sch=btn[1]
+set_property -dict { PACKAGE_PIN B9    IOSTANDARD LVCMOS33 } [get_ports { Button[2] }]; #IO_L11N_T1_SRCC_16 Sch=btn[2]
+set_property -dict { PACKAGE_PIN B8    IOSTANDARD LVCMOS33 } [get_ports { Button[3] }]; #IO_L12P_T1_MRCC_16 Sch=btn[3]
 
 ## VGA
 set_property -dict { PACKAGE_PIN F5    IOSTANDARD LVCMOS33 } [get_ports { VGA_B }]; #IO_0_35           	Sch=ck_a[0]		ChipKit pin=A0
@@ -113,3 +118,19 @@ set_property -dict { PACKAGE_PIN T18   IOSTANDARD LVCMOS33 } [get_ports { ADC_DO
 #set_property -dict { PACKAGE_PIN J13   IOSTANDARD LVCMOS33 } [get_ports { eth_txd[2] }]; #IO_L17N_T2_A25_15 Sch=eth_txd[2]
 #set_property -dict { PACKAGE_PIN H17   IOSTANDARD LVCMOS33 } [get_ports { eth_txd[3] }]; #IO_L18P_T2_A24_15 Sch=eth_txd[3]
 
+# Inputs
+set_false_path -from [get_ports {Button[*]}]
+set_false_path -from [get_ports {SW[*]}]
+set_false_path -from [get_ports {Encoder_A}]
+set_false_path -from [get_ports {Encoder_B}]
+set_false_path -from [get_ports {ADC_DOUT}]
+
+# Outputs
+set_false_path -to [get_ports {LED[*]}]
+set_false_path -to [get_ports {ADC_CLK}]
+set_false_path -to [get_ports {ADC_CS}]
+set_false_path -to [get_ports {VGA_R}]
+set_false_path -to [get_ports {VGA_G}]
+set_false_path -to [get_ports {VGA_B}]
+set_false_path -to [get_ports {VGA_HS}]
+set_false_path -to [get_ports {VGA_VS}]
