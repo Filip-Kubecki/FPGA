@@ -47,6 +47,10 @@ architecture Behavioral of vga_scope is
     constant V_BACK    : integer := 33;
     constant V_TOTAL   : integer := 525;
 
+    -- Grid constants
+    constant GRID_H : integer := 29;
+    constant GRID_V : integer := 64;
+
     signal has_data        : STD_LOGIC := '0';
     signal pixel_threshold : integer range 0 to 479 := 0;
 
@@ -63,7 +67,7 @@ begin
     bram_raddr <= STD_LOGIC_VECTOR(to_unsigned(h_cnt, 10))
                   when h_cnt < 640 else (others => '0');
 
-    -- Zapamiętaj że dane są gotowe
+    -- Data ready
     process(Clock100MHz)
     begin
         if rising_edge(Clock100MHz) then
@@ -75,7 +79,6 @@ begin
         end if;
     end process;
 
-    -- Przelicz próg piksela z danych BRAM
     process(clk25)
     begin
         if rising_edge(clk25) then
@@ -83,7 +86,7 @@ begin
         end if;
     end process;
 
-    -- Liczniki H i V
+    -- H and V counter
     process(clk25)
     begin
         if rising_edge(clk25) then
@@ -105,6 +108,45 @@ begin
         end if;
     end process;
 
+    -- Ploting (data and grid)
+    process(clk25)
+        variable on_grid_h : boolean;
+        variable on_grid_v : boolean;
+        variable on_signal : boolean;
+    begin
+        if rising_edge(clk25) then
+            if active = '1' then
+                on_grid_h := (v_cnt mod GRID_H) = 0;
+                on_grid_v := (h_cnt mod GRID_V) = 0;
+
+                -- Check if data point lays on grid
+                on_signal := has_data = '1' and
+                             v_cnt >= (V_VISIBLE - pixel_threshold);
+
+                if on_signal then
+                    -- DATA LINE - YELLOW
+                    VGA_R <= '1';
+                    VGA_G <= '1';
+                    VGA_B <= '0';
+                elsif on_grid_h or on_grid_v then
+                    -- GRID - WHITE
+                    VGA_R <= '1';
+                    VGA_G <= '1';
+                    VGA_B <= '1';
+                else
+                    -- BACKGROUND - BLACK
+                    VGA_R <= '0';
+                    VGA_G <= '0';
+                    VGA_B <= '0';
+                end if;
+            else
+                VGA_R <= '0';
+                VGA_G <= '0';
+                VGA_B <= '0';
+            end if;
+        end if;
+    end process;
+
     -- Sync
     VGA_HS <= '0' when (reset = '0' and enable = '1') and
                        (h_cnt >= H_VISIBLE + H_FRONT) and
@@ -120,27 +162,4 @@ begin
                        (h_cnt < H_VISIBLE) and
                        (v_cnt < V_VISIBLE)
               else '0';
-
-    -- Rysowanie wykresu
-    process(clk25)
-    begin
-        if rising_edge(clk25) then
-            if active = '1' and has_data = '1' then
-                if v_cnt >= (V_VISIBLE - pixel_threshold) then
-                    VGA_R <= '1';
-                    VGA_G <= '1';
-                    VGA_B <= '0';
-                else
-                    VGA_R <= '0';
-                    VGA_G <= '0';
-                    VGA_B <= '0';
-                end if;
-            else
-                VGA_R <= '0';
-                VGA_G <= '0';
-                VGA_B <= '0';
-            end if;
-        end if;
-    end process;
-
 end Behavioral;

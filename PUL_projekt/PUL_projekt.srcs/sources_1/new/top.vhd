@@ -69,6 +69,8 @@ architecture Behavioral of top is
             Clock100MHz  : in  STD_LOGIC;
             reset        : in  STD_LOGIC;
             trigger      : in  STD_LOGIC;
+            trig_mode    : in  STD_LOGIC;
+            trig_level   : in  STD_LOGIC_VECTOR(11 downto 0);
             adc_data     : in  STD_LOGIC_VECTOR(11 downto 0);
             adc_valid    : in  STD_LOGIC;
             bram_we      : out STD_LOGIC;
@@ -129,6 +131,11 @@ architecture Behavioral of top is
 
     signal adc_data   : STD_LOGIC_VECTOR(11 downto 0) := (others => '0');
     signal adc_valid  : STD_LOGIC := '0';
+
+    -- CONSTANTS
+
+    -- Stały próg triggera ~1V przy VREF=4.1V
+    constant TRIG_LEVEL : STD_LOGIC_VECTOR(11 downto 0) := STD_LOGIC_VECTOR(to_unsigned(999, 12));
 
     constant THRESH_1V  : unsigned(11 downto 0) := to_unsigned(999,  12);
     constant THRESH_2V  : unsigned(11 downto 0) := to_unsigned(1998, 12);
@@ -201,18 +208,20 @@ begin
       );
 
     U_CAP : capture_ctrl
-      port map(
-          Clock100MHz  => Clock100MHz,
-          reset        => reset,
-          trigger      => send_pulse,
-          adc_data     => adc_data,
-          adc_valid    => adc_valid,
-          bram_we      => bram_we,
-          bram_waddr   => bram_waddr,
-          bram_wdata   => bram_wdata,
-          capture_done => capture_done
-      );
-
+        port map(
+            Clock100MHz  => Clock100MHz,
+            reset        => reset,
+            trigger      => send_pulse,
+            trig_mode    => SW(3),        -- 0=przycisk, 1=zbocze
+            trig_level   => TRIG_LEVEL,
+            adc_data     => adc_data,
+            adc_valid    => adc_valid,
+            bram_we      => bram_we,
+            bram_waddr   => bram_waddr,
+            bram_wdata   => bram_wdata,
+            capture_done => capture_done
+        );
+        
     U_VGA : vga_scope
       port map(
           Clock100MHz  => Clock100MHz,
