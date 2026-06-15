@@ -85,14 +85,15 @@ begin
                         end if;
 
                     when ARMED =>
-                        if adc_valid = '1' then
+                        if trig_mode = '0' then
+                            state <= IDLE;
+                        elsif adc_valid = '1' then
                             if adc_prev < unsigned(trig_level) and
                                unsigned(adc_data) >= unsigned(trig_level) then
                                 state   <= CAPTURING;
                                 dec_cnt <= (others => '0');
                             end if;
                         end if;
-
                     when CAPTURING =>
                         if adc_valid = '1' then
                             if dec_cnt = dec_max then
