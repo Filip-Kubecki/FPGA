@@ -116,7 +116,7 @@ begin
     begin
         if rising_edge(clk25) then
             if active = '1' then
-                on_grid_h := (v_cnt mod GRID_H) = 0;
+                on_grid_h := ((V_VISIBLE - 1 - v_cnt) mod GRID_H) = 0;
                 on_grid_v := (h_cnt mod GRID_V) = 0;
 
                 -- Check if data point lays on grid
