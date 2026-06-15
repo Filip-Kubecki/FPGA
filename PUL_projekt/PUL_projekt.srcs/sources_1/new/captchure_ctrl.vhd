@@ -6,17 +6,15 @@ entity capture_ctrl is
     Port(
         Clock100MHz  : in  STD_LOGIC;
         reset        : in  STD_LOGIC;
-        -- Trigger od debouncera
         trigger      : in  STD_LOGIC;
-        -- Tryb wyzwalania: '0' = przycisk, '1' = zbocze narastające
         trig_mode    : in  STD_LOGIC;
-        -- Próg triggera zboczowego
         trig_level   : in  STD_LOGIC_VECTOR(11 downto 0);
+        -- Decimation: 0=x1, 1=x2, 2=x4, 3=x8, 4=x16, 5=x32
+        decimation   : in  unsigned(2 downto 0);
         -- ADC
         adc_data     : in  STD_LOGIC_VECTOR(11 downto 0);
         adc_valid    : in  STD_LOGIC;
-        -- BRAM zapis
-        bram_we      : out STD_LOGIC;
+        -- BRAM zapis bram_we      : out STD_LOGIC;
         bram_waddr   : out STD_LOGIC_VECTOR(9 downto 0);
         bram_wdata   : out STD_LOGIC_VECTOR(11 downto 0);
         -- Status
@@ -31,10 +29,27 @@ architecture Behavioral of capture_ctrl is
     signal w_addr   : unsigned(9 downto 0) := (others => '0');
     signal adc_prev : unsigned(11 downto 0) := (others => '0');
 
+    -- Licznik decimation
+    signal dec_cnt  : unsigned(4 downto 0) := (others => '0');
+    signal dec_max  : unsigned(4 downto 0) := (others => '0');
+
 begin
 
     bram_wdata <= adc_data;
     bram_waddr <= STD_LOGIC_VECTOR(w_addr);
+
+    process(decimation)
+    begin
+        case decimation is
+            when "000"  => dec_max <= "00000";
+            when "001"  => dec_max <= "00001";
+            when "010"  => dec_max <= "00011";
+            when "011"  => dec_max <= "00111";
+            when "100"  => dec_max <= "01111";
+            when "101"  => dec_max <= "11111";
+            when others => dec_max <= "00000";
+        end case;
+    end process;
 
     process(Clock100MHz)
     begin
@@ -45,11 +60,11 @@ begin
                 bram_we      <= '0';
                 capture_done <= '0';
                 adc_prev     <= (others => '0');
+                dec_cnt      <= (others => '0');
             else
                 bram_we      <= '0';
                 capture_done <= '0';
 
-                -- Zapamiętaj poprzednią próbkę do detekcji zbocza
                 if adc_valid = '1' then
                     adc_prev <= unsigned(adc_data);
                 end if;
@@ -57,35 +72,39 @@ begin
                 case state is
 
                     when IDLE =>
-                        w_addr <= (others => '0');
+                        w_addr  <= (others => '0');
+                        dec_cnt <= (others => '0');
                         if trig_mode = '0' then
-                            -- Tryb przycisk: czekaj na send_pulse
                             if trigger = '1' then
                                 state <= CAPTURING;
                             end if;
                         else
-                            -- Tryb zboczowy: czekaj na przycisk żeby uzbroić
                             if trigger = '1' then
                                 state <= ARMED;
                             end if;
                         end if;
 
-                    -- ARMED: czekaj na zbocze narastające przez próg
                     when ARMED =>
                         if adc_valid = '1' then
-                            -- Zbocze narastające: poprzednia < próg AND bieżąca >= próg
                             if adc_prev < unsigned(trig_level) and
                                unsigned(adc_data) >= unsigned(trig_level) then
-                                state <= CAPTURING;
+                                state   <= CAPTURING;
+                                dec_cnt <= (others => '0');
                             end if;
                         end if;
 
                     when CAPTURING =>
                         if adc_valid = '1' then
-                            bram_we <= '1';
-                            w_addr  <= w_addr + 1;
-                            if w_addr = 639 then
-                                state <= DONE;
+                            if dec_cnt = dec_max then
+                                -- Zapisz próbkę do BRAM
+                                bram_we <= '1';
+                                w_addr  <= w_addr + 1;
+                                dec_cnt <= (others => '0');
+                                if w_addr = 639 then
+                                    state <= DONE;
+                                end if;
+                            else
+                                dec_cnt <= dec_cnt + 1;
                             end if;
                         end if;
 
@@ -93,13 +112,14 @@ begin
                         capture_done <= '1';
                         if trig_mode = '0' then
                             if trigger = '1' then
-                                state  <= CAPTURING;
-                                w_addr <= (others => '0');
+                                state   <= CAPTURING;
+                                w_addr  <= (others => '0');
+                                dec_cnt <= (others => '0');
                             end if;
                         else
-                            -- Tryb zboczowy: automatycznie uzbrój ponownie
-                            state  <= ARMED;
-                            w_addr <= (others => '0');
+                            state   <= ARMED;
+                            w_addr  <= (others => '0');
+                            dec_cnt <= (others => '0');
                         end if;
 
                     when others =>

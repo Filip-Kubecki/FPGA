@@ -71,6 +71,7 @@ architecture Behavioral of top is
             trigger      : in  STD_LOGIC;
             trig_mode    : in  STD_LOGIC;
             trig_level   : in  STD_LOGIC_VECTOR(11 downto 0);
+            decimation   : in  STD_LOGIC_VECTOR(2 downto 0);
             adc_data     : in  STD_LOGIC_VECTOR(11 downto 0);
             adc_valid    : in  STD_LOGIC;
             bram_we      : out STD_LOGIC;
@@ -116,6 +117,8 @@ architecture Behavioral of top is
     signal bram_raddr   : STD_LOGIC_VECTOR(9 downto 0) := (others => '0');
     signal bram_rdata   : STD_LOGIC_VECTOR(11 downto 0) := (others => '0');
     signal capture_done : STD_LOGIC := '0';
+    signal decimation   : unsigned(2 downto 0) := (others => '0');
+
 
     signal send_pulse : STD_LOGIC := '0';
 
@@ -123,7 +126,6 @@ architecture Behavioral of top is
     signal enc_cw   : STD_LOGIC := '0';
     signal enc_ccw  : STD_LOGIC := '0';
     signal enc_pos  : signed(15 downto 0) := (others => '0');
-    signal led_pos  : unsigned(1 downto 0) := (others => '0');
 
     signal reset      : STD_LOGIC;
     signal adc_en     : STD_LOGIC;
@@ -137,53 +139,31 @@ architecture Behavioral of top is
     -- Stały próg triggera ~1V przy VREF=4.1V
     constant TRIG_LEVEL : STD_LOGIC_VECTOR(11 downto 0) := STD_LOGIC_VECTOR(to_unsigned(999, 12));
 
-    constant THRESH_1V  : unsigned(11 downto 0) := to_unsigned(999,  12);
-    constant THRESH_2V  : unsigned(11 downto 0) := to_unsigned(1998, 12);
-    constant THRESH_3V  : unsigned(11 downto 0) := to_unsigned(2997, 12);
-    constant THRESH_35V : unsigned(11 downto 0) := to_unsigned(3496, 12);
-
 begin
 
     reset  <= SW(0); -- RESET
     adc_en <= SW(1); -- ADC ENABLE
     vga_en <= SW(2); -- VGA ENABLE
+    -- SW(3) -- TRIGGER set 0 = przycisk, 1 = auto trigger
 
-    LED_ENC : process(Clock100MHz)
+    -- Enkoder zmienia decimation (0-5)
+    DEC_CTRL : process(Clock100MHz)
     begin
         if rising_edge(Clock100MHz) then
             if reset = '1' then
-                led_pos <= (others => '0');
+                decimation <= (others => '0');
             else
-                if enc_cw = '1' then
-                    led_pos <= led_pos + 1;
-                elsif enc_ccw = '1' then
-                    led_pos <= led_pos - 1;
+                if enc_cw = '1' and decimation < 5 then
+                    decimation <= decimation + 1;
+                elsif enc_ccw = '1' and decimation > 0 then
+                    decimation <= decimation - 1;
                 end if;
             end if;
         end if;
     end process;
 
     -- Dekoduj pozycję na LED
-    with led_pos select
-        LED <= "1000" when "00",
-               "0100" when "01",
-               "0010" when "10",
-               "0001" when "11",
-               "1111" when others;
-
-    -- LED_INDICATOR : process(Clock100MHz)
-    -- begin
-    --     if rising_edge(Clock100MHz) then
-    --         if reset = '1' then
-    --             LED <= (others => '0');
-    --         elsif adc_valid = '1' then
-    --             LED(0) <= '1' when unsigned(adc_data) > THRESH_1V  else '0';
-    --             LED(1) <= '1' when unsigned(adc_data) > THRESH_2V  else '0';
-    --             LED(2) <= '1' when unsigned(adc_data) > THRESH_3V  else '0';
-    --             LED(3) <= '1' when unsigned(adc_data) > THRESH_35V else '0';
-    --         end if;
-    --     end if;
-    -- end process;
+    LED <= STD_LOGIC_VECTOR(resize(decimation, 4));
 
     U_ADC : adc_reader
       port map(
@@ -213,6 +193,7 @@ begin
             reset        => reset,
             trigger      => send_pulse,
             trig_mode    => SW(3),        -- 0=przycisk, 1=zbocze
+            decimation   => STD_LOGIC_VECTOR(decimation),
             trig_level   => TRIG_LEVEL,
             adc_data     => adc_data,
             adc_valid    => adc_valid,
