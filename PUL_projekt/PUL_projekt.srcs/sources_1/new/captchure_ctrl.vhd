@@ -14,7 +14,8 @@ entity capture_ctrl is
         -- ADC
         adc_data     : in  STD_LOGIC_VECTOR(11 downto 0);
         adc_valid    : in  STD_LOGIC;
-        -- BRAM zapis bram_we      : out STD_LOGIC;
+        -- BRAM zapis 
+        bram_we      : out STD_LOGIC;
         bram_waddr   : out STD_LOGIC_VECTOR(9 downto 0);
         bram_wdata   : out STD_LOGIC_VECTOR(11 downto 0);
         -- Status

@@ -89,6 +89,7 @@ architecture Behavioral of top is
             capture_done : in  STD_LOGIC;
             bram_raddr   : out STD_LOGIC_VECTOR(9 downto 0);
             bram_rdata   : in  STD_LOGIC_VECTOR(11 downto 0);
+            decimation   : in  STD_LOGIC_VECTOR (2 downto 0);
             VGA_R        : out STD_LOGIC;
             VGA_G        : out STD_LOGIC;
             VGA_B        : out STD_LOGIC;
@@ -134,7 +135,15 @@ architecture Behavioral of top is
     signal adc_data   : STD_LOGIC_VECTOR(11 downto 0) := (others => '0');
     signal adc_valid  : STD_LOGIC := '0';
 
-    -- CONSTANTS
+    -- Filter - Moving Average
+    type avg_buf_t is array (0 to 7) of unsigned(11 downto 0);
+    signal avg_buf    : avg_buf_t := (others => (others => '0'));
+    signal avg_sum    : unsigned(14 downto 0) := (others => '0');
+    signal avg_out    : STD_LOGIC_VECTOR(11 downto 0) := (others => '0');
+    signal avg_valid  : STD_LOGIC := '0';
+
+    signal filtered_data  : STD_LOGIC_VECTOR(11 downto 0) := (others => '0');
+    signal filtered_valid : STD_LOGIC := '0';
 
     -- Stały próg triggera ~1V przy VREF=4.1V
     constant TRIG_LEVEL : STD_LOGIC_VECTOR(11 downto 0) := STD_LOGIC_VECTOR(to_unsigned(999, 12));
@@ -142,8 +151,10 @@ architecture Behavioral of top is
 begin
 
     reset  <= SW(0); -- RESET
-    adc_en <= SW(1); -- ADC ENABLE
     vga_en <= SW(2); -- VGA ENABLE
+    -- Przełącznik filtra
+    filtered_data  <= avg_out   when SW(1) = '1' else adc_data;
+    filtered_valid <= avg_valid  when SW(1) = '1' else adc_valid;
     -- SW(3) -- TRIGGER set 0 = przycisk, 1 = auto trigger
 
     -- Enkoder zmienia decimation (0-5)
@@ -162,14 +173,42 @@ begin
         end if;
     end process;
 
+    -- Moving Average Filter N=8
+    MA_FILTER : process(Clock100MHz)
+    begin
+        if rising_edge(Clock100MHz) then
+            if reset = '1' then
+                avg_buf   <= (others => (others => '0'));
+                avg_sum   <= (others => '0');
+                avg_out   <= (others => '0');
+                avg_valid <= '0';
+            elsif adc_valid = '1' then
+                avg_buf(1 to 7) <= avg_buf(0 to 6);
+                avg_buf(0)      <= unsigned(adc_data);
+                avg_sum <= resize(avg_buf(0), 15) + resize(avg_buf(1), 15) +
+                           resize(avg_buf(2), 15) + resize(avg_buf(3), 15) +
+                           resize(avg_buf(4), 15) + resize(avg_buf(5), 15) +
+                           resize(avg_buf(6), 15) + resize(avg_buf(7), 15);
+                avg_out   <= STD_LOGIC_VECTOR(avg_sum(14 downto 3));
+                avg_valid <= '1';
+            else
+                avg_valid <= '0';
+            end if;
+        end if;
+    end process;
+
     -- Dekoduj pozycję na LED
-    LED <= STD_LOGIC_VECTOR(resize(decimation, 4));
+LED <= "0000" when decimation = 0
+       else "0001" when decimation = 1 
+       else "0011" when decimation = 2 
+       else "0111" when decimation = 3 
+       else "1111";
 
     U_ADC : adc_reader
       port map(
           Clock100MHz => Clock100MHz,
           reset       => reset,
-          enable      => adc_en,
+          enable      => '1',
           ADC_CLK     => ADC_CLK,
           ADC_CS      => ADC_CS,
           ADC_DOUT    => ADC_DOUT,
@@ -195,8 +234,8 @@ begin
             trig_mode    => SW(3),        -- 0=przycisk, 1=zbocze
             decimation   => STD_LOGIC_VECTOR(decimation),
             trig_level   => TRIG_LEVEL,
-            adc_data     => adc_data,
-            adc_valid    => adc_valid,
+            adc_data     => filtered_data,
+            adc_valid    => filtered_valid,
             bram_we      => bram_we,
             bram_waddr   => bram_waddr,
             bram_wdata   => bram_wdata,
@@ -211,6 +250,7 @@ begin
           capture_done => capture_done,
           bram_raddr   => bram_raddr,
           bram_rdata   => bram_rdata,
+          decimation   => STD_LOGIC_VECTOR(decimation),
           VGA_R        => VGA_R,
           VGA_G        => VGA_G,
           VGA_B        => VGA_B,
@@ -225,15 +265,15 @@ begin
           send_pulse  => send_pulse
       );
 
-      U_ENC : encoder
-        port map(
-            Clock100MHz => Clock100MHz,
-            reset       => reset,
-            Encoder_A   => Encoder_A,
-            Encoder_B   => Encoder_B,
-            step_cw     => enc_cw,
-            step_ccw    => enc_ccw,
-            position    => enc_pos
-        );
+    U_ENC : encoder
+      port map(
+          Clock100MHz => Clock100MHz,
+          reset       => reset,
+          Encoder_A   => Encoder_A,
+          Encoder_B   => Encoder_B,
+          step_cw     => enc_cw,
+          step_ccw    => enc_ccw,
+          position    => enc_pos
+      );
 
 end Behavioral;
