@@ -1,3 +1,10 @@
+--------------------------------------------------------------------------------
+-- top.vhd
+--
+-- Top-level module integrating the digital oscilloscope system.
+-- Connects ADC acquisition, optional moving-average filtering, BRAM frame
+-- buffering, VGA display, and user input (switches, button, encoder).
+--------------------------------------------------------------------------------
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
@@ -110,7 +117,18 @@ architecture Behavioral of top is
         );
     end component;
 
-    -- Zmienne, stałe i sygnały
+    component moving_average_filter is
+        Port(
+            Clock100MHz : in  STD_LOGIC;
+            reset       : in  STD_LOGIC;
+            adc_data    : in  STD_LOGIC_VECTOR(11 downto 0);
+            adc_valid   : in  STD_LOGIC;
+            avg_out     : out STD_LOGIC_VECTOR(11 downto 0);
+            avg_valid   : out STD_LOGIC
+        );
+    end component;
+
+    -- Signals and constants
 
     signal bram_we      : STD_LOGIC := '0';
     signal bram_waddr   : STD_LOGIC_VECTOR(9 downto 0) := (others => '0');
@@ -118,8 +136,9 @@ architecture Behavioral of top is
     signal bram_raddr   : STD_LOGIC_VECTOR(9 downto 0) := (others => '0');
     signal bram_rdata   : STD_LOGIC_VECTOR(11 downto 0) := (others => '0');
     signal capture_done : STD_LOGIC := '0';
-    signal decimation   : unsigned(2 downto 0) := (others => '0');
 
+    -- Time base scaling factor: capture stores every 2^decimation-th ADC sample
+    signal decimation   : unsigned(2 downto 0) := (others => '0');
 
     signal send_pulse : STD_LOGIC := '0';
 
@@ -132,32 +151,31 @@ architecture Behavioral of top is
     signal adc_en     : STD_LOGIC;
     signal vga_en     : STD_LOGIC;
 
-    signal adc_data   : STD_LOGIC_VECTOR(11 downto 0) := (others => '0');
-    signal adc_valid  : STD_LOGIC := '0';
-
     -- Filter - Moving Average
-    type avg_buf_t is array (0 to 7) of unsigned(11 downto 0);
-    signal avg_buf    : avg_buf_t := (others => (others => '0'));
-    signal avg_sum    : unsigned(14 downto 0) := (others => '0');
     signal avg_out    : STD_LOGIC_VECTOR(11 downto 0) := (others => '0');
     signal avg_valid  : STD_LOGIC := '0';
 
+    signal adc_data   : STD_LOGIC_VECTOR(11 downto 0) := (others => '0');
+    signal adc_valid  : STD_LOGIC := '0';
+
+    -- Selected signal path fed into capture_ctrl: raw ADC or filtered output
     signal filtered_data  : STD_LOGIC_VECTOR(11 downto 0) := (others => '0');
     signal filtered_valid : STD_LOGIC := '0';
 
-    -- Stały próg triggera ~1V przy VREF=4.1V
+    -- Edge-trigger threshold, ~1V at VREF=4.1V
     constant TRIG_LEVEL : STD_LOGIC_VECTOR(11 downto 0) := STD_LOGIC_VECTOR(to_unsigned(999, 12));
 
 begin
 
-    reset  <= SW(0); -- RESET
-    vga_en <= SW(2); -- VGA ENABLE
-    -- Przełącznik filtra
+    reset  <= SW(0); -- system reset
+    vga_en <= SW(2); -- VGA enable
+
+    -- Filter bypass switch: select raw or filtered ADC data
     filtered_data  <= avg_out   when SW(1) = '1' else adc_data;
     filtered_valid <= avg_valid  when SW(1) = '1' else adc_valid;
-    -- SW(3) -- TRIGGER set 0 = przycisk, 1 = auto trigger
+    -- SW(3): trigger mode, 0 = manual button, 1 = automatic edge trigger
 
-    -- Enkoder zmienia decimation (0-5)
+    -- Time base control: encoder rotation steps decimation up/down (0-5)
     DEC_CTRL : process(Clock100MHz)
     begin
         if rising_edge(Clock100MHz) then
@@ -173,36 +191,18 @@ begin
         end if;
     end process;
 
-    -- Moving Average Filter N=8
-    MA_FILTER : process(Clock100MHz)
-    begin
-        if rising_edge(Clock100MHz) then
-            if reset = '1' then
-                avg_buf   <= (others => (others => '0'));
-                avg_sum   <= (others => '0');
-                avg_out   <= (others => '0');
-                avg_valid <= '0';
-            elsif adc_valid = '1' then
-                avg_buf(1 to 7) <= avg_buf(0 to 6);
-                avg_buf(0)      <= unsigned(adc_data);
-                avg_sum <= resize(avg_buf(0), 15) + resize(avg_buf(1), 15) +
-                           resize(avg_buf(2), 15) + resize(avg_buf(3), 15) +
-                           resize(avg_buf(4), 15) + resize(avg_buf(5), 15) +
-                           resize(avg_buf(6), 15) + resize(avg_buf(7), 15);
-                avg_out   <= STD_LOGIC_VECTOR(avg_sum(14 downto 3));
-                avg_valid <= '1';
-            else
-                avg_valid <= '0';
-            end if;
-        end if;
-    end process;
+    -- Display current decimation level on LEDs
+    LED <= STD_LOGIC_VECTOR(resize(decimation, 4));
 
-    -- Dekoduj pozycję na LED
-LED <= "0000" when decimation = 0
-       else "0001" when decimation = 1 
-       else "0011" when decimation = 2 
-       else "0111" when decimation = 3 
-       else "1111";
+    U_FILTER : moving_average_filter
+      port map(
+          Clock100MHz => Clock100MHz,
+          reset       => reset,
+          adc_data    => adc_data,
+          adc_valid   => adc_valid,
+          avg_out     => avg_out,
+          avg_valid   => avg_valid
+      );
 
     U_ADC : adc_reader
       port map(
@@ -231,7 +231,7 @@ LED <= "0000" when decimation = 0
             Clock100MHz  => Clock100MHz,
             reset        => reset,
             trigger      => send_pulse,
-            trig_mode    => SW(3),        -- 0=przycisk, 1=zbocze
+            trig_mode    => SW(3),
             decimation   => STD_LOGIC_VECTOR(decimation),
             trig_level   => TRIG_LEVEL,
             adc_data     => filtered_data,

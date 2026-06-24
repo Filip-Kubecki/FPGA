@@ -1,3 +1,11 @@
+--------------------------------------------------------------------------------
+-- capture_ctrl.vhd
+--
+-- Acquisition controller writing ADC samples into the BRAM frame buffer.
+-- Supports two trigger modes (manual button / automatic rising-edge trigger)
+-- and a decimation factor that scales the effective time base by storing
+-- only every 2^decimation-th ADC sample.
+--------------------------------------------------------------------------------
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
@@ -14,7 +22,7 @@ entity capture_ctrl is
         -- ADC
         adc_data     : in  STD_LOGIC_VECTOR(11 downto 0);
         adc_valid    : in  STD_LOGIC;
-        -- BRAM zapis 
+        -- BRAM write port
         bram_we      : out STD_LOGIC;
         bram_waddr   : out STD_LOGIC_VECTOR(9 downto 0);
         bram_wdata   : out STD_LOGIC_VECTOR(11 downto 0);
@@ -25,12 +33,16 @@ end capture_ctrl;
 
 architecture Behavioral of capture_ctrl is
 
+    -- IDLE: waiting for trigger
+    -- ARMED: edge-trigger mode only, waiting for adc_data to cross trig_level
+    -- CAPTURING: writing 640 samples to BRAM
+    -- DONE: frame complete, one cycle pulse before re-arming/returning
     type state_t is (IDLE, ARMED, CAPTURING, DONE);
     signal state    : state_t := IDLE;
     signal w_addr   : unsigned(9 downto 0) := (others => '0');
     signal adc_prev : unsigned(11 downto 0) := (others => '0');
 
-    -- Licznik decimation
+    -- Counts ADC samples between BRAM writes, compared against dec_max
     signal dec_cnt  : unsigned(4 downto 0) := (others => '0');
     signal dec_max  : unsigned(4 downto 0) := (others => '0');
 
@@ -39,6 +51,7 @@ begin
     bram_wdata <= adc_data;
     bram_waddr <= STD_LOGIC_VECTOR(w_addr);
 
+    -- Maps decimation (0-5) to the sample-skip threshold (2^decimation - 1)
     process(decimation)
     begin
         case decimation is
@@ -89,16 +102,18 @@ begin
                         if trig_mode = '0' then
                             state <= IDLE;
                         elsif adc_valid = '1' then
+                            -- Rising-edge detection against trig_level
                             if adc_prev < unsigned(trig_level) and
                                unsigned(adc_data) >= unsigned(trig_level) then
                                 state   <= CAPTURING;
                                 dec_cnt <= (others => '0');
                             end if;
                         end if;
+
                     when CAPTURING =>
                         if adc_valid = '1' then
                             if dec_cnt = dec_max then
-                                -- Zapisz próbkę do BRAM
+                                -- Store sample and advance write address
                                 bram_we <= '1';
                                 w_addr  <= w_addr + 1;
                                 dec_cnt <= (others => '0');
@@ -119,6 +134,7 @@ begin
                                 dec_cnt <= (others => '0');
                             end if;
                         else
+                            -- Auto re-arm for the next edge trigger
                             state   <= ARMED;
                             w_addr  <= (others => '0');
                             dec_cnt <= (others => '0');

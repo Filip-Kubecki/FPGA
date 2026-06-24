@@ -1,3 +1,11 @@
+--------------------------------------------------------------------------------
+-- bram.vhd
+--
+-- Dual-port block memory used as the oscilloscope frame buffer.
+-- One port is written by capture_ctrl with ADC samples, the other is
+-- continuously read by vga_scope to render the waveform. Both ports
+-- operate independently and synchronously to the same clock.
+--------------------------------------------------------------------------------
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
@@ -5,11 +13,11 @@ use IEEE.NUMERIC_STD.ALL;
 entity bram is
     Port(
         clk   : in  STD_LOGIC;
-        -- Port zapisu (ADC)
+        -- Write port (ADC)
         we    : in  STD_LOGIC;
         waddr : in  STD_LOGIC_VECTOR(9 downto 0);
         wdata : in  STD_LOGIC_VECTOR(11 downto 0);
-        -- Port odczytu (VGA)
+        -- Read port (VGA)
         raddr : in  STD_LOGIC_VECTOR(9 downto 0);
         rdata : out STD_LOGIC_VECTOR(11 downto 0)
     );
@@ -19,7 +27,8 @@ architecture Behavioral of bram is
     type ram_t is array (0 to 639) of STD_LOGIC_VECTOR(11 downto 0);
     signal ram : ram_t := (others => (others => '0'));
 begin
-    -- Port zapisu
+
+    -- Write port
     process(clk)
     begin
         if rising_edge(clk) then
@@ -29,11 +38,12 @@ begin
         end if;
     end process;
 
-    -- Port odczytu
+    -- Read port (registered, one cycle latency)
     process(clk)
     begin
         if rising_edge(clk) then
             rdata <= ram(to_integer(unsigned(raddr)));
         end if;
     end process;
+
 end Behavioral;

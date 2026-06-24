@@ -1,3 +1,11 @@
+--------------------------------------------------------------------------------
+-- encoder.vhd
+--
+-- Quadrature rotary encoder decoder. Channels A and B are independently
+-- debounced, then direction is determined from the state of B at the
+-- moment a rising edge is detected on A. Outputs one-cycle pulses for
+-- clockwise/counter-clockwise steps plus an accumulated position counter.
+--------------------------------------------------------------------------------
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
@@ -15,9 +23,9 @@ entity encoder is
 end encoder;
 
 architecture Behavioral of encoder is
-
+    -- STABLE / DELAY / PRESSED -- same debounce pattern as debouncer.vhd,
+    -- applied independently to each quadrature channel
     type bt_state_t is (STABILNY, OPOZNIENIE, WCISNIETY);
-
     signal a_state      : bt_state_t := STABILNY;
     signal b_state      : bt_state_t := STABILNY;
     signal a_debounced  : STD_LOGIC := '0';
@@ -28,12 +36,10 @@ architecture Behavioral of encoder is
 
     signal a_prev       : STD_LOGIC := '0';
     signal pos_reg      : signed(15 downto 0) := (others => '0');
-
 begin
-
     position <= pos_reg;
 
-    -- Debouncer A
+    -- Debounces Encoder_A
     process(Clock100MHz)
     begin
         if rising_edge(Clock100MHz) then
@@ -69,7 +75,7 @@ begin
         end if;
     end process;
 
-    -- Debouncer B
+    -- Debounces Encoder_B
     process(Clock100MHz)
     begin
         if rising_edge(Clock100MHz) then
@@ -105,7 +111,8 @@ begin
         end if;
     end process;
 
-    -- Dekoder kierunku na rosnącym zboczu A
+    -- Direction decoder: triggers on rising edge of debounced A,
+    -- B's level at that moment determines CW vs CCW
     process(Clock100MHz)
     begin
         if rising_edge(Clock100MHz) then
@@ -118,7 +125,6 @@ begin
                 a_prev   <= a_debounced;
                 step_cw  <= '0';
                 step_ccw <= '0';
-
                 if a_debounced = '1' and a_prev = '0' then
                     if b_debounced = '0' then
                         step_cw <= '1';
@@ -131,5 +137,4 @@ begin
             end if;
         end if;
     end process;
-
 end Behavioral;

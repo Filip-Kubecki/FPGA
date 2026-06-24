@@ -1,3 +1,11 @@
+--------------------------------------------------------------------------------
+-- adc_reader.vhd
+--
+-- SPI master for the MCP3201 12-bit ADC. Drives ADC_CLK and ADC_CS, reads
+-- the serial conversion result on ADC_DOUT, and outputs the 12-bit sample
+-- with a one-cycle data_valid pulse. SPI clock runs at ~1.5625MHz, derived
+-- from the 100MHz system clock via PRESCALER.
+--------------------------------------------------------------------------------
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
@@ -16,6 +24,9 @@ entity adc_reader is
 end adc_reader;
 
 architecture Behavioral of adc_reader is
+    -- ADC_SAMPLE: 2 SPI clock cycles for the converter's sample/hold window
+    -- ADC_NULL: 1 cycle for the null bit preceding the 12 data bits
+    -- ADC_TRANSFER: 12 cycles reading B11..B0, MSB first
     type adc_state_t is (
         ADC_IDLE,
         ADC_ASSERT_CS,
@@ -35,6 +46,7 @@ architecture Behavioral of adc_reader is
     signal bit_cnt   : unsigned(3 downto 0) := (others => '0');
     signal clk_cnt   : unsigned(1 downto 0) := (others => '0');
 
+    -- Idle gap enforced between conversions (CS high time)
     signal idle_cnt  : unsigned(6 downto 0) := (others => '0');
     constant IDLE_TIME : unsigned(6 downto 0) := to_unsigned(100, 7);
 
@@ -42,6 +54,7 @@ begin
     ADC_CLK <= clk_reg;
     ADC_CS  <= cs_reg;
 
+    -- Divides 100MHz system clock down to the SPI clock rate for the ADC
     PRESCALER : process(Clock100MHz)
         constant DIV : integer := 31;
         variable cnt : integer range 0 to DIV := 0;
@@ -62,6 +75,7 @@ begin
         end if;
     end process;
 
+    -- Main SPI sequencing state machine for the MCP3201
     ADC_FSM : process(Clock100MHz)
     begin
         if rising_edge(Clock100MHz) then
